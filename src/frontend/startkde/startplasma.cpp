@@ -22,6 +22,7 @@
 #include <QEventLoop>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QTimer>
 
 #include <QDBusConnectionInterface>
 #include <QDBusMetaType>
@@ -51,6 +52,49 @@
 #include "lookandfeelsettings.h"
 
 using namespace Qt::StringLiterals;
+
+namespace
+{
+using namespace std::chrono_literals;
+
+inline constexpr auto EnvIsRemote = "PLASMALOGIN_IS_REMOTE";
+inline constexpr auto EnvRemoteId = "PLASMALOGIN_REMOTE_ID";
+inline constexpr auto EnvDbusAddress = "DBUS_SESSION_BUS_ADDRESS";
+inline constexpr auto EnvWaylandDisplay = "WAYLAND_DISPLAY";
+inline constexpr auto EnvKwinOverlays = "KWIN_USE_OVERLAYS";
+
+inline constexpr auto DbusStartupTimeout = 5000ms;
+inline constexpr auto KWinWaitTimeout = 10000ms;
+
+inline constexpr auto DbusDaemonBinary = "dbus-daemon"_L1;
+inline constexpr auto DbusSessionFlag = "--session"_L1;
+inline constexpr auto DbusPrintAddressFlag = "--print-address=1"_L1;
+inline constexpr auto DbusNoForkFlag = "--nofork"_L1;
+
+inline constexpr auto KWinServiceName = "org.kde.KWin"_L1;
+inline constexpr auto WaylandRemoteSocketPattern = "wayland-remote-%1"_L1;
+
+inline constexpr auto KWinWaylandBinary = CMAKE_INSTALL_FULL_BINDIR "/kwin_wayland"_L1;
+inline constexpr auto GreeterBinary = CMAKE_INSTALL_FULL_LIBEXECDIR "/plasma-login-greeter"_L1;
+inline constexpr auto WallpaperBinary = CMAKE_INSTALL_FULL_BINDIR "/plasma-login-wallpaper"_L1;
+inline constexpr auto KRdpServerBinary = CMAKE_INSTALL_FULL_BINDIR "/krdpserver"_L1;
+
+inline constexpr auto FlagNoLockscreen = "--no-lockscreen"_L1;
+inline constexpr auto FlagNoGlobalShortcuts = "--no-global-shortcuts"_L1;
+inline constexpr auto FlagNoKActivities = "--no-kactivities"_L1;
+inline constexpr auto FlagInputMethod = "--inputmethod"_L1;
+inline constexpr auto InputMethodPlasmaKeyboard = "plasma-keyboard"_L1;
+inline constexpr auto FlagLocale1 = "--locale1"_L1;
+inline constexpr auto FlagVirtual = "--virtual"_L1;
+inline constexpr auto FlagSocket = "--socket"_L1;
+
+inline constexpr auto FlagPlasma = "--plasma"_L1;
+inline constexpr auto FlagMonitor = "--monitor"_L1;
+inline constexpr auto DefaultMonitorIndex = "0"_L1;
+inline constexpr auto FlagHandover = "--handover"_L1;
+inline constexpr auto FlagRemoteId = "--remote-id"_L1;
+inline constexpr auto FlagZero = "0";
+}
 
 QTextStream out(stderr);
 
@@ -435,6 +479,21 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
 
+    // Remote greeters run as the same 'plasmalogin' user as seat0's greeter.
+    // Start a dedicated session dbus-daemon before QDBusConnection::sessionBus()
+    // is first used so each remote greeter gets its own isolated D-Bus session
+    // bus and does not collide with seat0's systemd --user units or org.kde.KWin.
+    QProcess dbusDaemonProc;
+    if (qEnvironmentVariableIsSet(EnvIsRemote)) {
+        dbusDaemonProc.start(DbusDaemonBinary.toString(), {DbusSessionFlag.toString(), DbusPrintAddressFlag.toString(), DbusNoForkFlag.toString()});
+        if (dbusDaemonProc.waitForStarted() && dbusDaemonProc.waitForReadyRead(DbusStartupTimeout.count())) {
+            const QByteArray address = dbusDaemonProc.readLine().trimmed();
+            if (!address.isEmpty()) {
+                qputenv(EnvDbusAddress, address);
+            }
+        }
+    }
+
     createConfigDirectory();
     signal(SIGTERM, sigtermHandler);
 
@@ -473,8 +532,73 @@ int main(int argc, char **argv)
         }
     }
 
+    if (qEnvironmentVariableIsSet("PLASMALOGIN_IS_REMOTE") && !qEnvironmentVariableIsSet("KWIN_WAYLAND_EXTRA_ARGS")) {
+        qputenv("KWIN_WAYLAND_EXTRA_ARGS", "--virtual");
+    }
+
     setupPlasmaEnvironment();
     runStartupConfig();
+
+    if (qEnvironmentVariableIsSet(EnvIsRemote)) {
+        const QString remoteId = qEnvironmentVariable(EnvRemoteId);
+        const QString waylandSocket = QString(WaylandRemoteSocketPattern).arg(remoteId);
+        qunsetenv(EnvWaylandDisplay);
+        qputenv(EnvKwinOverlays, FlagZero);
+
+        QProcess kwinProc;
+        kwinProc.setProcessChannelMode(QProcess::ForwardedChannels);
+        kwinProc.start(KWinWaylandBinary.toString(),
+                       {FlagNoLockscreen.toString(),
+                        FlagNoGlobalShortcuts.toString(),
+                        FlagNoKActivities.toString(),
+                        FlagInputMethod.toString(),
+                        InputMethodPlasmaKeyboard.toString(),
+                        FlagLocale1.toString(),
+                        FlagVirtual.toString(),
+                        FlagSocket.toString(),
+                        waylandSocket});
+
+        if (!QDBusConnection::sessionBus().interface()->isServiceRegistered(KWinServiceName.toString())) {
+            QEventLoop waitLoop;
+            QDBusServiceWatcher watcher(KWinServiceName.toString(), QDBusConnection::sessionBus(), QDBusServiceWatcher::WatchForRegistration);
+            QObject::connect(&watcher, &QDBusServiceWatcher::serviceRegistered, &waitLoop, &QEventLoop::quit);
+            QObject::connect(&kwinProc, &QProcess::finished, &waitLoop, &QEventLoop::quit);
+            QTimer::singleShot(KWinWaitTimeout.count(), &waitLoop, &QEventLoop::quit);
+            waitLoop.exec();
+        }
+
+        qputenv(EnvWaylandDisplay, waylandSocket.toUtf8());
+        syncDBusEnvironment();
+
+        QObject::connect(&kwinProc, &QProcess::finished, &app, &QCoreApplication::quit);
+
+        QProcess greeterProc;
+        greeterProc.setProcessChannelMode(QProcess::ForwardedChannels);
+        greeterProc.start(GreeterBinary.toString(), QStringList{});
+
+        QProcess wallpaperProc;
+        wallpaperProc.setProcessChannelMode(QProcess::ForwardedChannels);
+        wallpaperProc.start(WallpaperBinary.toString(), QStringList{});
+
+        QProcess krdpProc;
+        krdpProc.setProcessChannelMode(QProcess::ForwardedChannels);
+        if (!remoteId.isEmpty()) {
+            krdpProc.start(
+                KRdpServerBinary.toString(),
+                {FlagPlasma.toString(), FlagMonitor.toString(), DefaultMonitorIndex.toString(), FlagHandover.toString(), FlagRemoteId.toString(), remoteId});
+            QObject::connect(&krdpProc, &QProcess::finished, &app, &QCoreApplication::quit);
+        }
+
+        app.exec();
+
+        qDebug() << "stopping remote greeter session";
+        gentleTermination(&krdpProc);
+        gentleTermination(&wallpaperProc);
+        gentleTermination(&greeterProc);
+        gentleTermination(&kwinProc);
+        gentleTermination(&dbusDaemonProc);
+        return 0;
+    }
 
     auto oldSystemdEnvironment = getSystemdEnvironment();
     if (!syncDBusEnvironment()) {

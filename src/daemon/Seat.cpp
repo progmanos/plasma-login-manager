@@ -19,6 +19,7 @@
 
 #include "DaemonApp.h"
 #include "MainConfigLoader.h"
+#include "SeatManager.h"
 #include "VirtualTerminal.h"
 
 #include <QDebug>
@@ -41,9 +42,10 @@
 
 namespace PLASMALOGIN
 {
-Seat::Seat(const QString &name, QObject *parent)
+Seat::Seat(const QString &name, const QString &remoteId, QObject *parent)
     : QObject(parent)
     , m_name(name)
+    , m_remoteId(remoteId)
 {
     auto display = createDisplay();
     setupAutoLogin(display);
@@ -53,6 +55,16 @@ Seat::Seat(const QString &name, QObject *parent)
 const QString &Seat::name() const
 {
     return m_name;
+}
+
+const QString &Seat::remoteId() const
+{
+    return m_remoteId;
+}
+
+bool Seat::isRemote() const
+{
+    return !m_remoteId.isEmpty();
 }
 
 bool Seat::isTtyInUse(const QString &tty) const
@@ -80,6 +92,10 @@ bool Seat::isTtyInUse(const QString &tty) const
 
 VirtualTerminal::Terminal Seat::availableVt() const
 {
+    if (isRemote()) {
+        return {};
+    }
+
     if (!isTtyInUse(QStringLiteral("tty%1").arg(PLASMALOGIN_INITIAL_VT))) {
         return VirtualTerminal::openVt(PLASMALOGIN_INITIAL_VT);
     }
@@ -144,6 +160,9 @@ Display *Seat::createDisplay()
     // create a new display
     qDebug() << "Adding new display...";
     Display *display = new Display(this);
+    if (isRemote()) {
+        display->setRemoteId(m_remoteId);
+    }
 
     // restart display on stop
     connect(display, &Display::stopped, this, &Seat::displayStopped);
@@ -156,6 +175,11 @@ Display *Seat::createDisplay()
 
 void Seat::setupAutoLogin(Display *display)
 {
+    // Remote seats always present the greeter — autologin does not apply to remote sessions.
+    if (isRemote()) {
+        return;
+    }
+
     PlasmaLogin::config()->load();
 
     // Per-seat autologin overrides the global [Autologin] keys for a dedicated seat.
@@ -189,12 +213,22 @@ void Seat::displayStopped()
 {
     Display *display = qobject_cast<Display *>(sender());
     std::optional<int> nextVt;
-    nextVt = vtForSession(display->reuseSessionId());
+    if (!isRemote()) {
+        nextVt = vtForSession(display->reuseSessionId());
+    }
 
     // remove display from list
     m_displays.removeAll(display);
     // delete display
     display->deleteLater();
+
+    if (isRemote()) {
+        // Capture the name before removeSeat() schedules this Seat for deletion via deleteLater().
+        const QString name = m_name;
+        qDebug() << "Remote display stopped for seat" << name << ", removing seat";
+        daemonApp->seatManager()->removeSeat(name);
+        return;
+    }
 
     // restart otherwise, unless the system is shutting down anyway
     if (m_displays.isEmpty()) {
@@ -223,6 +257,9 @@ void Seat::displayStopped()
 
 bool Seat::canTTY()
 {
+    if (isRemote()) {
+        return false;
+    }
     OrgFreedesktopLogin1ManagerInterface manager(Logind::serviceName(), Logind::managerPath(), QDBusConnection::systemBus());
     if (manager.isValid()) {
         auto seatPath = manager.GetSeat(m_name);

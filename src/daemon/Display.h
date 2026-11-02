@@ -56,6 +56,10 @@ public:
     Seat *seat() const;
     void setAutoLogin(const QString &user, const QString &session);
 
+    void setRemoteId(const QString &remoteId);
+    QString remoteId() const;
+    bool isRemote() const;
+
 public slots:
     bool start();
     void stop();
@@ -74,6 +78,7 @@ private:
 
     void startSocketServerAndGreeter();
     bool handleAutologinFailure();
+    void cleanupRemoteSession();
 
     bool m_started{false};
 
@@ -83,6 +88,7 @@ private:
     QString m_passPhrase;
     QString m_sessionName;
     QString m_reuseSessionId;
+    QString m_remoteId;
 
     Session m_autologinSession;
     QString m_autologinUser;

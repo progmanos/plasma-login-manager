@@ -28,6 +28,7 @@ namespace PLASMALOGIN
 {
 class Configuration;
 class DisplayManager;
+class RemoteDisplayFactory;
 class SeatManager;
 
 class DaemonApp : public QCoreApplication
@@ -45,6 +46,7 @@ public:
     bool isFirstBoot();
 
     DisplayManager *displayManager() const;
+    RemoteDisplayFactory *remoteDisplayFactory() const;
     SeatManager *seatManager() const;
 
 public slots:
@@ -58,6 +60,7 @@ private:
     std::optional<bool> m_isFirstBoot;
 
     DisplayManager *m_displayManager{nullptr};
+    RemoteDisplayFactory *m_remoteDisplayFactory{nullptr};
     SeatManager *m_seatManager{nullptr};
 };
 }

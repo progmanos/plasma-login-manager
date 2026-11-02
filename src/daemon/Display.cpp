@@ -25,9 +25,13 @@
 #include "Seat.h"
 #include "SocketServer.h"
 
+#include <Login1Manager.h>
+#include <Login1Session.h>
+
 #include <QDebug>
 #include <QFile>
 #include <QLocalSocket>
+#include <QProcess>
 #include <QTimer>
 
 #include <pwd.h>
@@ -39,6 +43,21 @@
 
 #include "VirtualTerminal.h"
 #include "config.h"
+
+namespace
+{
+using namespace Qt::StringLiterals;
+using namespace std::chrono_literals;
+
+inline constexpr auto EnvRemoteId = "PLASMALOGIN_REMOTE_ID"_L1;
+inline constexpr auto EnvIsRemote = "PLASMALOGIN_IS_REMOTE"_L1;
+inline constexpr auto EnvKwinExtraArgs = "KWIN_WAYLAND_EXTRA_ARGS"_L1;
+inline constexpr auto KWinVirtualFlag = "--virtual"_L1;
+inline constexpr auto FlagEnabled = "1"_L1;
+
+inline constexpr auto RemoteGreeterGracePeriod = 30s;
+inline constexpr auto LocalGreeterGracePeriod = 5s;
+}
 
 static int s_ttyFailures = 0;
 
@@ -88,6 +107,9 @@ Display::Display(Seat *parent)
 Display::~Display()
 {
     disconnect(m_auth, &Auth::finished, this, &Display::slotHelperFinished);
+    if (isRemote()) {
+        cleanupRemoteSession();
+    }
     stop();
 }
 
@@ -98,12 +120,27 @@ int Display::terminalId() const
 
 QString Display::sessionType() const
 {
-    return "wayland";
+    return QStringLiteral("wayland");
 }
 
 Seat *Display::seat() const
 {
     return m_seat;
+}
+
+void Display::setRemoteId(const QString &remoteId)
+{
+    m_remoteId = remoteId;
+}
+
+QString Display::remoteId() const
+{
+    return m_remoteId;
+}
+
+bool Display::isRemote() const
+{
+    return !m_remoteId.isEmpty();
 }
 
 void Display::setAutoLogin(const QString &user, const QString &session)
@@ -162,6 +199,9 @@ void Display::startSocketServerAndGreeter()
     }
 
     m_greeter->setSocket(m_socketServer->socketAddress());
+    if (isRemote()) {
+        m_greeter->setRemoteId(m_remoteId);
+    }
 
     // start greeter
     m_greeter->start();
@@ -192,6 +232,10 @@ void Display::stop()
         return;
     }
 
+    if (isRemote()) {
+        cleanupRemoteSession();
+    }
+
     // stop the greeter
     m_greeter->stop();
 
@@ -205,6 +249,50 @@ void Display::stop()
 
     // emit signal
     emit stopped();
+}
+
+void Display::cleanupRemoteSession()
+{
+    if (!isRemote()) {
+        return;
+    }
+
+    const QString user = m_auth ? m_auth->user() : QString();
+    if (user.isEmpty() || user == QLatin1String("plasmalogin")) {
+        return;
+    }
+
+    qInfo() << "Cleaning up remote graphical session for user:" << user << "remoteId:" << m_remoteId;
+
+    // Stop graphical session units for the user via systemctl
+    QProcess::execute(
+        QStringLiteral("systemctl"),
+        {QStringLiteral("--user"), QStringLiteral("-M"), QStringLiteral("%1@").arg(user), QStringLiteral("stop"), QStringLiteral("graphical-session.target")});
+
+    QProcess::execute(QStringLiteral("systemctl"),
+                      {QStringLiteral("--user"),
+                       QStringLiteral("-M"),
+                       QStringLiteral("%1@").arg(user),
+                       QStringLiteral("stop"),
+                       QStringLiteral("plasma-kwin_wayland.service")});
+
+    // Also terminate the logind session if present
+    if (Logind::isAvailable()) {
+        OrgFreedesktopLogin1ManagerInterface manager(Logind::serviceName(), Logind::managerPath(), QDBusConnection::systemBus());
+        auto reply = manager.ListSessions();
+        reply.waitForFinished();
+        if (reply.isValid()) {
+            for (const SessionInfo &s : reply.value()) {
+                if (s.userName == user) {
+                    OrgFreedesktopLogin1SessionInterface session(Logind::serviceName(), s.sessionPath.path(), QDBusConnection::systemBus());
+                    if (session.service() == QLatin1String("plasmalogin")) {
+                        qInfo() << "Terminating logind session:" << s.sessionId << "for user:" << user;
+                        manager.TerminateSession(s.sessionId);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void Display::login(QLocalSocket *socket, const QString &user, const QString &password, const Session &session)
@@ -250,7 +338,9 @@ bool Display::startAuth(const QString &user, const QString &password, const Sess
 
     m_reuseSessionId = QString();
 
-    m_reuseSessionId = seat()->reusableSessionId(user);
+    if (!isRemote()) {
+        m_reuseSessionId = seat()->reusableSessionId(user);
+    }
 
     // save session desktop file name, we'll use it to set the
     // last session later, in slotAuthenticationFinished()
@@ -278,11 +368,21 @@ bool Display::startAuth(const QString &user, const QString &password, const Sess
     }
     env.insert(QStringLiteral("XDG_SESSION_CLASS"), QStringLiteral("user"));
     env.insert(QStringLiteral("XDG_SESSION_TYPE"), session.xdgSessionType());
-    env.insert(QStringLiteral("XDG_SEAT"), seat()->name());
+    // Remote seats are unknown to logind; register a seatless session instead
+    // (see Greeter::start()).
+    if (!isRemote()) {
+        env.insert(QStringLiteral("XDG_SEAT"), seat()->name());
+    }
     if (m_sessionTerminalId.isValid()) {
         env.insert(QStringLiteral("XDG_VTNR"), QString::number(m_sessionTerminalId.tty()));
     }
     env.insert(QStringLiteral("XDG_SESSION_DESKTOP"), session.desktopNames());
+
+    if (isRemote()) {
+        env.insert(EnvRemoteId.toString(), m_remoteId);
+        env.insert(EnvIsRemote.toString(), FlagEnabled.toString());
+        env.insert(EnvKwinExtraArgs.toString(), KWinVirtualFlag.toString());
+    }
 
     m_auth->setUser(user);
     if (m_reuseSessionId.isNull()) {
@@ -371,7 +471,9 @@ void Display::slotSessionStarted(bool success)
 {
     qDebug() << "Session started" << success;
     if (success) {
-        QTimer::singleShot(5000, m_greeter, &Greeter::stop);
+        // Remote sessions need time to start KWin and krdpserver and complete
+        // the RDP redirection handover from the greeter's krdpserver.
+        QTimer::singleShot(isRemote() ? RemoteGreeterGracePeriod : LocalGreeterGracePeriod, m_greeter, &Greeter::stop);
     }
 }
 }

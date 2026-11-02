@@ -130,13 +130,44 @@ void SeatManager::initialize()
 void SeatManager::createSeat(const QString &name)
 {
     // create a seat
-    Seat *seat = new Seat(name, this);
+    Seat *seat = new Seat(name, QString(), this);
 
     // add to the list
     m_seats.insert(name, seat);
 
     // emit signal
     emit seatCreated(name);
+}
+
+Seat *SeatManager::createRemoteSeat(const QString &name, const QString &remoteId)
+{
+    if (m_seats.contains(name)) {
+        return m_seats.value(name);
+    }
+
+    Seat *seat = new Seat(name, remoteId, this);
+    m_seats.insert(name, seat);
+    emit seatCreated(name);
+    return seat;
+}
+
+Seat *SeatManager::findRemoteSeat(const QString &remoteId) const
+{
+    for (Seat *seat : m_seats) {
+        if (seat->isRemote() && seat->remoteId() == remoteId) {
+            return seat;
+        }
+    }
+    return nullptr;
+}
+
+QString SeatManager::remoteIdForSeat(const QString &name) const
+{
+    Seat *seat = m_seats.value(name, nullptr);
+    if (seat && seat->isRemote()) {
+        return seat->remoteId();
+    }
+    return {};
 }
 
 void SeatManager::removeSeat(const QString &name)

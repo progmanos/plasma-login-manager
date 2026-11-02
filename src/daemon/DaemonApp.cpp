@@ -17,6 +17,7 @@
 #include "DaemonApp.h"
 
 #include "DisplayManager.h"
+#include "RemoteDisplayFactory.h"
 #include "SeatManager.h"
 #include <KSignalHandler>
 
@@ -50,6 +51,9 @@ DaemonApp::DaemonApp(int &argc, char **argv)
     // create seat manager
     m_seatManager = new SeatManager(this);
 
+    // create remote display factory
+    m_remoteDisplayFactory = new RemoteDisplayFactory(this);
+
     // connect with display manager
     connect(m_seatManager, &SeatManager::seatCreated, m_displayManager, &DisplayManager::AddSeat);
     connect(m_seatManager, &SeatManager::seatRemoved, m_displayManager, &DisplayManager::RemoveSeat);
@@ -73,6 +77,11 @@ DaemonApp::DaemonApp(int &argc, char **argv)
 DisplayManager *DaemonApp::displayManager() const
 {
     return m_displayManager;
+}
+
+RemoteDisplayFactory *DaemonApp::remoteDisplayFactory() const
+{
+    return m_remoteDisplayFactory;
 }
 
 SeatManager *DaemonApp::seatManager() const

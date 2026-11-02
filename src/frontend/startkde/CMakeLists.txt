@@ -4,6 +4,10 @@ ecm_install_configured_files(INPUT plasma-login-kwin_wayland.service.in DESTINAT
 ecm_qt_declare_logging_category(startplasma_SRCS HEADER debug.h IDENTIFIER PLASMA_STARTUP CATEGORY_NAME org.kde.startup)
 
 add_executable(startplasma-login-wayland startplasma.cpp ${startplasma_SRCS})
+target_compile_definitions(startplasma-login-wayland PRIVATE
+    CMAKE_INSTALL_FULL_BINDIR="${CMAKE_INSTALL_FULL_BINDIR}"
+    CMAKE_INSTALL_FULL_LIBEXECDIR="${CMAKE_INSTALL_FULL_LIBEXECDIR}"
+)
 target_link_libraries(startplasma-login-wayland PRIVATE
     Qt::Core
     Qt::DBus

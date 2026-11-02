@@ -4,7 +4,10 @@ PartOf=graphical-session.target
 
 [Service]
 Environment="KWIN_USE_OVERLAYS=0"
-ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/kwin_wayland --no-lockscreen --no-global-shortcuts --no-kactivities --inputmethod plasma-keyboard --locale1
+# KWIN_WAYLAND_EXTRA_ARGS is an internal variable set exclusively by PLM's startplasma.cpp
+# to "--virtual" for headless remote (RDP) sessions, and is empty for normal sessions.
+# It is not user-facing and must not be set by external processes.
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/kwin_wayland --no-lockscreen --no-global-shortcuts --no-kactivities --inputmethod plasma-keyboard --locale1 $KWIN_WAYLAND_EXTRA_ARGS
 SuccessExitStatus=15
 BusName=org.kde.KWin
 Slice=session.slice

@@ -21,6 +21,17 @@
 
 #include "plasmaloginsettings.h"
 
+namespace
+{
+using namespace Qt::StringLiterals;
+
+inline constexpr unsigned int DefaultMinUid = std::numeric_limits<unsigned int>::min();
+inline constexpr unsigned int DefaultMaxUid = std::numeric_limits<unsigned int>::max();
+inline constexpr auto FallbackLoginDefsPath = "/usr/etc/login.defs"_L1;
+inline constexpr auto KeyUidMin = "UID_MIN"_L1;
+inline constexpr auto KeyUidMax = "UID_MAX"_L1;
+}
+
 static void addDirectoryToConfig(KSharedConfig::Ptr config, const QDir &dir)
 {
     const auto entryInfoList = dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot, QDir::LocaleAware);
@@ -69,17 +80,20 @@ PlasmaLoginSettings::~PlasmaLoginSettings()
 
 void PlasmaLoginSettings::getUids()
 {
-    m_minimumUid = std::numeric_limits<unsigned int>::min();
-    m_maximumUid = std::numeric_limits<unsigned int>::max();
+    m_minimumUid = DefaultMinUid;
+    m_maximumUid = DefaultMaxUid;
 
     QFile loginDefs(QStringLiteral(LOGIN_DEFS_PATH));
+    if (!loginDefs.exists()) {
+        loginDefs.setFileName(FallbackLoginDefsPath.toString());
+    }
     if (!loginDefs.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        qWarning() << "Failed to determine min/max uid";
+        qWarning() << "Failed to determine min/max uid, using defaults" << m_minimumUid << m_maximumUid;
         return;
     }
 
     QTextStream in(&loginDefs);
-    const QStringList keys = {QStringLiteral("UID_MIN"), QStringLiteral("UID_MAX")};
+    const QStringList keys = {KeyUidMin.toString(), KeyUidMax.toString()};
 
     while (!in.atEnd()) {
         QString line = in.readLine().split(QLatin1Char('#')).first().simplified();

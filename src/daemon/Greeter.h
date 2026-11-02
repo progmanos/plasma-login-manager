@@ -38,6 +38,10 @@ public:
     void setSocket(const QString &socket);
     bool isRunning() const;
 
+    void setRemoteId(const QString &remoteId);
+    QString remoteId() const;
+    bool isRemote() const;
+
 public slots:
     bool start();
     void stop();
@@ -62,6 +66,7 @@ private:
 
     Display *const m_display{nullptr};
     QString m_socket;
+    QString m_remoteId;
 
     Auth *m_auth{nullptr};
     QProcess *m_process{nullptr};

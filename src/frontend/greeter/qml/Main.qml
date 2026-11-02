@@ -83,6 +83,16 @@ Item {
 
         onPressed: PlasmaLogin.GreeterState.activateWindow(Window.window);
         onPositionChanged: PlasmaLogin.GreeterState.activateWindow(Window.window);
+        Window.onWindowChanged: {
+            if (Window.window && !PlasmaLogin.GreeterState.activeWindow) {
+                PlasmaLogin.GreeterState.activateWindow(Window.window);
+            }
+        }
+        Component.onCompleted: {
+            if (Window.window && !PlasmaLogin.GreeterState.activeWindow) {
+                PlasmaLogin.GreeterState.activateWindow(Window.window);
+            }
+        }
 
         DropShadow {
             id: clockShadow

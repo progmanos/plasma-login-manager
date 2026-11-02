@@ -71,6 +71,9 @@ void WallpaperApp::createWindowForScreen(QScreen *screen)
     });
 
     window->setGeometry(screen->geometry());
+    connect(screen, &QScreen::geometryChanged, window, [window, screen]() {
+        window->setGeometry(screen->geometry());
+    });
 
     if (auto layerShellWindow = LayerShellQt::Window::get(window)) {
         layerShellWindow->setScope(QStringLiteral("plasma-login-wallpaper"));

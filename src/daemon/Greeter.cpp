@@ -46,6 +46,21 @@ void Greeter::setSocket(const QString &socket)
     m_socket = socket;
 }
 
+void Greeter::setRemoteId(const QString &remoteId)
+{
+    m_remoteId = remoteId;
+}
+
+QString Greeter::remoteId() const
+{
+    return m_remoteId;
+}
+
+bool Greeter::isRemote() const
+{
+    return !m_remoteId.isEmpty();
+}
+
 bool Greeter::start()
 {
     // check flag
@@ -98,7 +113,12 @@ bool Greeter::start()
                               env);
 
         env.insert(QStringLiteral("PATH"), PlasmaLogin::config()->defaultPath());
-        env.insert(QStringLiteral("XDG_SEAT"), m_display->seat()->name());
+        // Remote seats are internal to the daemon and unknown to logind, so
+        // pam_systemd would refuse to register the session (NoSuchSeat). Like
+        // GDM, run remote greeters in a seatless logind session instead.
+        if (!isRemote()) {
+            env.insert(QStringLiteral("XDG_SEAT"), m_display->seat()->name());
+        }
         env.insert(QStringLiteral("XDG_SEAT_PATH"), daemonApp->displayManager()->seatPath(m_display->seat()->name()));
         env.insert(QStringLiteral("XDG_SESSION_PATH"), daemonApp->displayManager()->sessionPath(QStringLiteral("Session%1").arg(daemonApp->newSessionId())));
         if (m_display->seat()->name() == QLatin1String("seat0") && m_display->terminalId() > 0) {
@@ -107,6 +127,12 @@ bool Greeter::start()
         env.insert(QStringLiteral("XDG_SESSION_CLASS"), QStringLiteral("greeter"));
         env.insert(QStringLiteral("XDG_SESSION_TYPE"), m_display->sessionType());
         env.insert(QStringLiteral("SDDM_SOCKET"), m_socket);
+
+        if (isRemote()) {
+            env.insert(QStringLiteral("PLASMALOGIN_REMOTE_ID"), m_remoteId);
+            env.insert(QStringLiteral("PLASMALOGIN_IS_REMOTE"), QStringLiteral("1"));
+            env.insert(QStringLiteral("KWIN_WAYLAND_EXTRA_ARGS"), QStringLiteral("--virtual"));
+        }
 
         m_auth->insertEnvironment(env);
 

@@ -23,10 +23,22 @@
 #include "seatadaptor.h"
 #include "sessionadaptor.h"
 
-const QString DISPLAYMANAGER_SERVICE = QStringLiteral("org.freedesktop.DisplayManager");
-const QString DISPLAYMANAGER_PATH = QStringLiteral("/org/freedesktop/DisplayManager");
-const QString DISPLAYMANAGER_SEAT_PATH = QStringLiteral("/org/freedesktop/DisplayManager/Seat");
-const QString DISPLAYMANAGER_SESSION_PATH = QStringLiteral("/org/freedesktop/DisplayManager/Session");
+#include <QRegularExpression>
+
+namespace
+{
+using namespace Qt::StringLiterals;
+
+inline constexpr auto DisplayManagerService = "org.freedesktop.DisplayManager"_L1;
+inline constexpr auto KdeDisplayManagerService = "org.kde.DisplayManager"_L1;
+inline constexpr auto DisplayManagerPath = "/org/freedesktop/DisplayManager"_L1;
+inline constexpr auto KdeDisplayManagerPath = "/org/kde/DisplayManager"_L1;
+inline constexpr auto DisplayManagerSeatPath = "/org/freedesktop/DisplayManager/Seat"_L1;
+inline constexpr auto DisplayManagerSessionPath = "/org/freedesktop/DisplayManager/Session"_L1;
+
+inline constexpr auto StdSeatPattern = "^seat(\\d+)$"_L1;
+inline constexpr qsizetype SessionPrefixLength = 7; // length of "Session"
+}
 
 namespace PLASMALOGIN
 {
@@ -38,18 +50,29 @@ DisplayManager::DisplayManager(QObject *parent)
 
     // register object
     QDBusConnection connection = QDBusConnection::systemBus();
-    connection.registerService(DISPLAYMANAGER_SERVICE);
-    connection.registerObject(DISPLAYMANAGER_PATH, this);
+    connection.registerService(DisplayManagerService.toString());
+    connection.registerService(KdeDisplayManagerService.toString());
+    connection.registerObject(DisplayManagerPath.toString(), this);
+    connection.registerObject(KdeDisplayManagerPath.toString(), this);
 }
 
 QString DisplayManager::seatPath(const QString &seatName)
 {
-    return DISPLAYMANAGER_SEAT_PATH + seatName.mid(4);
+    // Standard logind seats match seat\d+ (e.g. seat0, seat1).
+    // Strip the "seat" prefix so they get paths like /Seat0, /Seat1.
+    // All other seat names (e.g. seat_remote_<id>) get a leading underscore
+    // so they become /Seat_seat_remote_<id> — unambiguous and collision-free.
+    static const QRegularExpression stdSeatRe(StdSeatPattern.toString());
+    const QRegularExpressionMatch m = stdSeatRe.match(seatName);
+    if (m.hasMatch()) {
+        return DisplayManagerSeatPath.toString() + m.captured(1);
+    }
+    return DisplayManagerSeatPath.toString() + u'_' + seatName;
 }
 
 QString DisplayManager::sessionPath(const QString &sessionName)
 {
-    return DISPLAYMANAGER_SESSION_PATH + sessionName.mid(7);
+    return DisplayManagerSessionPath.toString() + sessionName.mid(SessionPrefixLength);
 }
 
 ObjectPathList DisplayManager::Seats() const
@@ -143,14 +166,14 @@ void DisplayManager::RemoveSession(const QString &name)
 DisplayManagerSeat::DisplayManagerSeat(const QString &name, QObject *parent)
     : QObject(parent)
     , m_name(name)
-    , m_path(DISPLAYMANAGER_SEAT_PATH + name.mid(4))
+    , m_path(daemonApp->displayManager()->seatPath(name))
 {
     // create adaptor
     new SeatAdaptor(this);
 
     // register object
     QDBusConnection connection = QDBusConnection::systemBus();
-    connection.registerService(DISPLAYMANAGER_SERVICE);
+    connection.registerService(DisplayManagerService.toString());
     connection.registerObject(m_path, this);
 }
 
@@ -192,7 +215,7 @@ ObjectPathList DisplayManagerSeat::Sessions()
 DisplayManagerSession::DisplayManagerSession(const QString &name, const QString &seat, const QString &user, QObject *parent)
     : QObject(parent)
     , m_name(name)
-    , m_path(DISPLAYMANAGER_SESSION_PATH + name.mid(7))
+    , m_path(DisplayManagerSessionPath.toString() + name.mid(SessionPrefixLength))
     , m_seat(seat)
     , m_user(user)
 {
@@ -201,7 +224,7 @@ DisplayManagerSession::DisplayManagerSession(const QString &name, const QString 
 
     // register object
     QDBusConnection connection = QDBusConnection::systemBus();
-    connection.registerService(DISPLAYMANAGER_SERVICE);
+    connection.registerService(DisplayManagerService.toString());
     connection.registerObject(m_path, this);
 }
 
@@ -227,7 +250,7 @@ void DisplayManagerSession::Lock()
 
 ObjectPath DisplayManagerSession::SeatPath() const
 {
-    return ObjectPath(DISPLAYMANAGER_SEAT_PATH + m_seat.mid(4));
+    return ObjectPath(daemonApp->displayManager()->seatPath(m_seat));
 }
 
 const QString &DisplayManagerSession::User() const

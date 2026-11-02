@@ -31,9 +31,11 @@ class Seat : public QObject
     Q_OBJECT
     Q_DISABLE_COPY(Seat)
 public:
-    explicit Seat(const QString &name, QObject *parent = 0);
+    explicit Seat(const QString &name, const QString &remoteId = QString(), QObject *parent = nullptr);
 
     const QString &name() const;
+    const QString &remoteId() const;
+    bool isRemote() const;
     Display *createDisplay();
     bool canTTY();
     bool tryLockFirstLogin();
@@ -50,6 +52,7 @@ private:
     void setupAutoLogin(Display *display);
 
     QString m_name;
+    QString m_remoteId;
 
     bool m_firstLoginLock = false;
 

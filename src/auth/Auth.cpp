@@ -11,6 +11,9 @@
 #include "Constants.h"
 #include "SafeDataStream.h"
 
+#include <QDebug>
+#include <QPointer>
+#include <QTimer>
 #include <QtCore/QProcess>
 #include <QtCore/QUuid>
 #include <QtNetwork/QLocalServer>
@@ -18,9 +21,17 @@
 
 #include <QtQml/QtQml>
 
+#include <chrono>
 #include <memory>
 
 #include <unistd.h>
+
+namespace
+{
+using namespace std::chrono_literals;
+
+inline constexpr auto HelperKillTimeout = 15s;
+}
 
 namespace PLASMALOGIN
 {
@@ -394,10 +405,13 @@ void Auth::stop()
 
     d->child->terminate();
 
-    // wait for finished
-    if (!d->child->waitForFinished(5000)) {
-        d->child->kill();
-    }
+    const QPointer<QProcess> child = d->child;
+    QTimer::singleShot(HelperKillTimeout, this, [child]() {
+        if (child && child->state() != QProcess::NotRunning) {
+            qWarning() << "plasmalogin-helper did not finish in time, killing";
+            child->kill();
+        }
+    });
 }
 }
 

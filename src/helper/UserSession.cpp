@@ -34,6 +34,9 @@ UserSession::UserSession(HelperApp *parent)
     : QProcess(parent)
 {
     connect(this, &QProcess::finished, this, &UserSession::finished);
+    connect(this, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        qWarning() << "User session process error:" << error << errorString();
+    });
     setChildProcessModifier(std::bind(&UserSession::childModifier, this));
 }
 
@@ -79,11 +82,24 @@ bool UserSession::start()
 void UserSession::stop()
 {
     if (state() != QProcess::NotRunning) {
-        terminate();
         const bool isGreeter = processEnvironment().value(QStringLiteral("XDG_SESSION_CLASS")) == QLatin1String("greeter");
+        if (!isGreeter) {
+            auto helper = qobject_cast<HelperApp *>(parent());
+            const QString user = helper ? helper->user() : QString();
+            if (!user.isEmpty()) {
+                QProcess::execute(QStringLiteral("systemctl"),
+                                  {QStringLiteral("--user"),
+                                   QStringLiteral("-M"),
+                                   QStringLiteral("%1@").arg(user),
+                                   QStringLiteral("stop"),
+                                   QStringLiteral("graphical-session.target")});
+            }
+        }
+
+        terminate();
 
         // Wait longer for a session than a greeter
-        if (!waitForFinished(isGreeter ? 5000 : 60000)) {
+        if (!waitForFinished(isGreeter ? 5000 : 10000)) {
             kill();
             if (!waitForFinished(5000)) {
                 qWarning() << "Could not fully finish the process" << program();

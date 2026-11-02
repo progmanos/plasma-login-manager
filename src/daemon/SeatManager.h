@@ -40,6 +40,10 @@ public:
     void removeSeat(const QString &name);
     void switchToGreeter(const QString &seat);
 
+    Seat *createRemoteSeat(const QString &name, const QString &remoteId);
+    Seat *findRemoteSeat(const QString &remoteId) const;
+    QString remoteIdForSeat(const QString &name) const;
+
 Q_SIGNALS:
     void seatCreated(const QString &name);
     void seatRemoved(const QString &name);

@@ -1,0 +1,20 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+    <interface name="org.kde.DisplayManager.RemoteDisplayFactory">
+        <method name="CreateRemoteDisplay">
+            <arg type="s" name="remoteId" direction="in"/>
+            <arg type="o" name="display" direction="out"/>
+        </method>
+        <method name="StopRemoteDisplay">
+            <arg type="s" name="remoteId" direction="in"/>
+            <arg type="b" name="success" direction="out"/>
+        </method>
+        <signal name="RemoteDisplayCreated">
+            <arg type="s" name="remoteId"/>
+            <arg type="o" name="display"/>
+        </signal>
+        <signal name="RemoteDisplayStopped">
+            <arg type="s" name="remoteId"/>
+        </signal>
+    </interface>
+</node>

@@ -13,6 +13,7 @@ set(DAEMON_SOURCES
     DisplayManager.cpp
     LogindDBusTypes.cpp
     Greeter.cpp
+    RemoteDisplayFactory.cpp
     Seat.cpp
     SeatManager.cpp
     SocketServer.cpp
@@ -23,6 +24,7 @@ set(DAEMON_SOURCES
 qt_add_dbus_adaptor(DAEMON_SOURCES "${CMAKE_SOURCE_DIR}/data/interfaces/org.freedesktop.DisplayManager.xml"          "DisplayManager.h" PLASMALOGIN::DisplayManager)
 qt_add_dbus_adaptor(DAEMON_SOURCES "${CMAKE_SOURCE_DIR}/data/interfaces/org.freedesktop.DisplayManager.Seat.xml"     "DisplayManager.h" PLASMALOGIN::DisplayManagerSeat)
 qt_add_dbus_adaptor(DAEMON_SOURCES "${CMAKE_SOURCE_DIR}/data/interfaces/org.freedesktop.DisplayManager.Session.xml"  "DisplayManager.h" PLASMALOGIN::DisplayManagerSession)
+qt_add_dbus_adaptor(DAEMON_SOURCES "${CMAKE_SOURCE_DIR}/data/interfaces/org.kde.DisplayManager.RemoteDisplayFactory.xml" "RemoteDisplayFactory.h" PLASMALOGIN::RemoteDisplayFactory)
 
 set_source_files_properties("${CMAKE_SOURCE_DIR}/data/interfaces/org.freedesktop.login1.Manager.xml" PROPERTIES
    INCLUDE "LogindDBusTypes.h"

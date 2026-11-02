@@ -24,6 +24,11 @@ SessionManagementScreen {
     property bool showUsernamePrompt: !showUserList
 
     property bool loginScreenUiVisible: false
+    onLoginScreenUiVisibleChanged: {
+        if (loginScreenUiVisible) {
+            Qt.callLater(focusFirstVisibleFormControl);
+        }
+    }
 
     //the y position that should be ensured visible when the on screen keyboard is visible
     property int visibleBoundary: mapFromItem(loginButton, 0, 0).y
@@ -111,7 +116,8 @@ SessionManagementScreen {
                 }
             }
 
-            visible: root.showUsernamePrompt || userList.currentItem.needsPassword
+            visible: root.showUsernamePrompt || !userList.currentItem || userList.currentItem.needsPassword
+            onVisibleChanged: Qt.callLater(focusFirstVisibleFormControl)
 
             Keys.onEscapePressed: {
                 mainStack.currentItem.forceActiveFocus();
@@ -148,7 +154,7 @@ SessionManagementScreen {
 
             icon.name: text.length === 0 ? (root.LayoutMirroring.enabled ? "go-previous" : "go-next") : ""
 
-            text: root.showUsernamePrompt || userList.currentItem.needsPassword ? "" : i18n("Log In")
+            text: root.showUsernamePrompt || !userList.currentItem || userList.currentItem.needsPassword ? "" : i18n("Log In")
             onClicked: startLogin()
             Keys.onEnterPressed: clicked()
             Keys.onReturnPressed: clicked()
@@ -170,6 +176,7 @@ SessionManagementScreen {
             if (sync.isUserList) {
                 root.userList.currentIndex = PlasmaLogin.GreeterState.userListIndex;
                 passwordBox.text = PlasmaLogin.GreeterState.userListPassword;
+                Qt.callLater(focusFirstVisibleFormControl);
             } else {
                 userNameInput.text = PlasmaLogin.StateConfig.lastLoggedInUser;
                 passwordBox.text = PlasmaLogin.GreeterState.userPromptPassword;
