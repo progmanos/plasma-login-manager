@@ -291,6 +291,12 @@ bool PamBackend::openSession()
     if (env.value(QStringLiteral("XDG_SESSION_CLASS")) == QLatin1String("greeter")) {
         env.insert(QStringLiteral("QT_NO_XDG_DESKTOP_PORTAL"), QStringLiteral("1"));
     }
+    if (env.value(QStringLiteral("PLASMALOGIN_IS_REMOTE")) == QStringLiteral("1")) {
+        const QString remoteId = env.value(QStringLiteral("PLASMALOGIN_REMOTE_ID"));
+        if (!remoteId.isEmpty()) {
+            env.insert(QStringLiteral("XDG_SEAT"), QStringLiteral("seat_remote_") + remoteId);
+        }
+    }
     m_app->session()->setProcessEnvironment(env);
     return m_app->session()->start();
 }

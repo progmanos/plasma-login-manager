@@ -46,4 +46,11 @@ esac
 # Restore user shell setting that may have been clobbered by setting environment
 export SHELL=$PLASMALOGIN_USER_SHELL
 
+if [ -n "$PLASMALOGIN_REMOTE_ID" ]; then
+    systemctl --user import-environment PLASMALOGIN_REMOTE_ID PLASMALOGIN_IS_REMOTE XDG_SEAT 2>/dev/null || true
+    if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+        dbus-update-activation-environment --systemd PLASMALOGIN_REMOTE_ID PLASMALOGIN_IS_REMOTE XDG_SEAT 2>/dev/null || true
+    fi
+fi
+
 exec $@

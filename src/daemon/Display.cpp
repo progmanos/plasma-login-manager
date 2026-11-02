@@ -51,8 +51,6 @@ using namespace std::chrono_literals;
 
 inline constexpr auto EnvRemoteId = "PLASMALOGIN_REMOTE_ID"_L1;
 inline constexpr auto EnvIsRemote = "PLASMALOGIN_IS_REMOTE"_L1;
-inline constexpr auto EnvKwinExtraArgs = "KWIN_WAYLAND_EXTRA_ARGS"_L1;
-inline constexpr auto KWinVirtualFlag = "--virtual"_L1;
 inline constexpr auto FlagEnabled = "1"_L1;
 
 inline constexpr auto RemoteGreeterGracePeriod = 30s;
@@ -276,6 +274,15 @@ void Display::cleanupRemoteSession()
                        QStringLiteral("stop"),
                        QStringLiteral("plasma-kwin_wayland.service")});
 
+    QProcess::execute(QStringLiteral("systemctl"),
+                      {QStringLiteral("--user"),
+                       QStringLiteral("-M"),
+                       QStringLiteral("%1@").arg(user),
+                       QStringLiteral("unset-environment"),
+                       QStringLiteral("PLASMALOGIN_REMOTE_ID"),
+                       QStringLiteral("PLASMALOGIN_IS_REMOTE"),
+                       QStringLiteral("XDG_SEAT")});
+
     // Also terminate the logind session if present
     if (Logind::isAvailable()) {
         OrgFreedesktopLogin1ManagerInterface manager(Logind::serviceName(), Logind::managerPath(), QDBusConnection::systemBus());
@@ -381,7 +388,6 @@ bool Display::startAuth(const QString &user, const QString &password, const Sess
     if (isRemote()) {
         env.insert(EnvRemoteId.toString(), m_remoteId);
         env.insert(EnvIsRemote.toString(), FlagEnabled.toString());
-        env.insert(EnvKwinExtraArgs.toString(), KWinVirtualFlag.toString());
     }
 
     m_auth->setUser(user);

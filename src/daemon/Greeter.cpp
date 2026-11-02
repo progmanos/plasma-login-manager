@@ -131,7 +131,6 @@ bool Greeter::start()
         if (isRemote()) {
             env.insert(QStringLiteral("PLASMALOGIN_REMOTE_ID"), m_remoteId);
             env.insert(QStringLiteral("PLASMALOGIN_IS_REMOTE"), QStringLiteral("1"));
-            env.insert(QStringLiteral("KWIN_WAYLAND_EXTRA_ARGS"), QStringLiteral("--virtual"));
         }
 
         m_auth->insertEnvironment(env);

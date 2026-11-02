@@ -532,8 +532,11 @@ int main(int argc, char **argv)
         }
     }
 
-    if (qEnvironmentVariableIsSet("PLASMALOGIN_IS_REMOTE") && !qEnvironmentVariableIsSet("KWIN_WAYLAND_EXTRA_ARGS")) {
-        qputenv("KWIN_WAYLAND_EXTRA_ARGS", "--virtual");
+    if (qEnvironmentVariableIsSet("PLASMALOGIN_IS_REMOTE") && !qEnvironmentVariableIsSet("XDG_SEAT")) {
+        const QString remoteId = qEnvironmentVariable("PLASMALOGIN_REMOTE_ID");
+        if (!remoteId.isEmpty()) {
+            qputenv("XDG_SEAT", QByteArray("seat_remote_") + remoteId.toUtf8());
+        }
     }
 
     setupPlasmaEnvironment();
